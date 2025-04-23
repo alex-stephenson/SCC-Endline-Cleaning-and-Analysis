@@ -9,6 +9,7 @@ library(tidyverse)
 library(cleaningtools)
 library(analysistools)
 library(presentresults)
+library(readxl)
 
 # write the aggregation file with a timestamp to more easily keep track of different versions
 date_time_now <- format(Sys.time(), "%a_%b_%d_%Y_%H%M%S")
@@ -19,7 +20,7 @@ date_time_now <- format(Sys.time(), "%a_%b_%d_%Y_%H%M%S")
 
 
 # load datasets for processing
-file_path <- "output/as_final_output/cleaned_data.xlsx"
+file_path <- "output/clean_and_raw.xlsx"
 main_data <- read_excel(file_path, 'cleaned_data') 
 
 raw_data <- read_excel("inputs/as_raw_data.xlsx") %>% 
@@ -39,7 +40,8 @@ kobo_choice <- read_excel(kobo_tool_name, sheet = "choices") %>%
   filter(name != "Bulsho IDP")
 
 ## load in the LOA
-loa <- readxl::read_excel("inputs/analysis_loa_all_data.xlsx")
+loa <- readxl::read_excel("inputs/scc_endline_loa.xlsx") %>% 
+  filter(analysis_var != "final_lcsi_cat")
 
 deletion <- read_excel("inputs/as_deletion_log.xlsx")
 combined_clogs <- read_excel("combined clogs/corrected_combined cleaning clogs.xlsx") %>% 
@@ -54,7 +56,7 @@ combined_clogs <- read_excel("combined clogs/corrected_combined cleaning clogs.x
 #  select(any_of(contains(loa_questions)), weights) 
 
 SCC_endline_Survey_Design <- main_data %>% 
-  srvyr::as_survey_design(., strata = "region", weights = weights)
+  srvyr::as_survey_design(., strata = "district", weights = weights)
 
 my_analysis <- create_analysis(SCC_endline_Survey_Design, sm_separator = "/", loa = loa)
 
@@ -77,6 +79,10 @@ results_table_labeled <- add_label_columns_to_results_table(
   label_dictionary
 )
 
+### making of the tables
+
+
+
 ## this function pivots it wider so we have each analysis variable as a row and each group as a column
 group_wide_results_table <- results_table_labeled %>% 
   create_table_variable_x_group() 
@@ -88,6 +94,78 @@ analysis_wide_results_table <- results_table_labeled %>%
   create_table_group_x_variable() 
 create_xlsx_group_x_variable(analysis_wide_results_table, file_path = "output/results_table_wide.xlsx", overwrite = T)
 
+
+
+### begin new code
+df_main_analysis_table <- presentresults::create_table_variable_x_group(results_table = results_table_labeled, value_columns = "stat")
+
+
+# Replace NA values in list columns with NULL
+df_main_analysis_table <- df_main_analysis_table %>%
+  mutate(across(where(is.list), ~ map(.x, ~ ifelse(is.na(.x), list(NULL), .x))))
+
+# # Replace NA values in non-list columns with "NA"
+# df_main_analysis_table <- df_main_analysis_table %>%
+#   mutate(across(where(~ !is.list(.x)), ~ ifelse(is.na(.x), "NA", .x)))
+
+df_main_analysis_table <- df_main_analysis_table %>%
+  mutate(across(where(~ !is.list(.x) & is.numeric(.x)), ~ replace(.x, is.na(.x), NA))) %>%
+  mutate(across(where(~ !is.list(.x) & !is.numeric(.x)), ~ ifelse(is.na(.x), "NA", .x)))
+
+
+
+# Step 8: Export the main analysis percentages table -------------------------
+presentresults::create_xlsx_variable_x_group(
+  table_group_x_variable = df_main_analysis_table,
+  file_path = paste0("output/results_table_long_percent.xlsx"),
+  value_columns = c("stat","n"),
+  overwrite = TRUE
+)
+
+
+# Step 9: Create and process the statistics table (counts: n, N, weighted) ----
+# Ensure `df_data$results_table` is used correctly for creating a table by group
+df_stats_table <- presentresults::create_table_variable_x_group(
+  results_table = results_table_labeled,
+  value_columns = c("n")
+)
+
+# Handle NA values in df_stats_table
+df_stats_table <- df_stats_table %>%
+  mutate(across(where(is.list), ~ map(.x, ~ ifelse(is.na(.x), list(NULL), .x)))) %>%
+  mutate(across(where(~ !is.list(.x)), ~ ifelse(is.na(.x), "", .x)))
+
+# Export the processed stats table to Excel
+presentresults::create_xlsx_variable_x_group(
+  table_group_x_variable = df_stats_table,  # Use the processed table
+  file_path = paste0("output/results_table_long_values.xlsx"),
+  value_columns = c("n"),
+  overwrite = TRUE  
+)
+
+
+### create wide format now::
+
+df_wide_analysis_table <- presentresults::create_table_group_x_variable(results_table = results_table_labeled, value_columns = "stat")
+
+
+presentresults::create_xlsx_group_x_variable(
+  table_group_x_variable = df_wide_analysis_table,
+  file_path = paste0("output/results_table_wide_percent.xlsx"),
+  overwrite = TRUE
+)
+
+df_wide_analysis_table_num <- presentresults::create_table_group_x_variable(
+  results_table = results_table_labeled, value_columns = c("n"))
+
+presentresults::create_xlsx_group_x_variable(
+  table_group_x_variable = df_wide_analysis_table_num,
+  file_path = paste0("output/results_table_wide_values.xlsx"),
+  overwrite = TRUE
+)
+
+
+### final clean up of data
 
 cols_to_remove <- c("consent_no", "enumerator_sensitivity", "deviceid", "audit", "enumerator_ID", 
                     "resp_phone", "resp_age", "_submission_time", "_validation_status", 
@@ -104,4 +182,4 @@ deletion <- deletion %>%
 
 final_output <- list(raw_data = raw_data_no_pii, cleaned_data = main_data_no_pii, survey = kobo_survey, choices = kobo_choice, deletion_log = deletion, cleaning_logs = combined_clogs)
 
-writexl::write_xlsx(final_output, "output/all_data_logbook_2.xlsx")
+writexl::write_xlsx(final_output, "output/all_data_logbook.xlsx")
