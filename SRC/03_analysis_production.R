@@ -14,11 +14,6 @@ library(readxl)
 # write the aggregation file with a timestamp to more easily keep track of different versions
 date_time_now <- format(Sys.time(), "%a_%b_%d_%Y_%H%M%S")
 
-##############################################################################
-########################## Load the Data and Survey ##########################
-##############################################################################
-
-
 # load datasets for processing
 file_path <- "output/clean_and_raw.xlsx"
 main_data <- read_excel(file_path, 'cleaned_data') 
@@ -40,9 +35,7 @@ kobo_choice <- read_excel(kobo_tool_name, sheet = "choices") %>%
   filter(name != "Bulsho IDP")
 
 ## load in the LOA
-loa <- readxl::read_excel("inputs/scc_endline_loa.xlsx") %>% 
-  filter(analysis_var != "final_lcsi_cat")
-
+loa <- readxl::read_excel("inputs/scc_endline_loa.xlsx")
 deletion <- read_excel("inputs/as_deletion_log.xlsx")
 combined_clogs <- read_excel("combined clogs/corrected_combined cleaning clogs.xlsx") %>% 
   filter(! uuid %in% deletion$uuid)
@@ -81,22 +74,6 @@ results_table_labeled <- add_label_columns_to_results_table(
 
 ### making of the tables
 
-
-
-## this function pivots it wider so we have each analysis variable as a row and each group as a column
-group_wide_results_table <- results_table_labeled %>% 
-  create_table_variable_x_group() 
-
-create_xlsx_variable_x_group(group_wide_results_table, file_path = "output/results_table_long.xlsx", overwrite = T)
-
-## this one pivots wider so we have each group as a row and each analysis variable as a column
-analysis_wide_results_table <- results_table_labeled %>% 
-  create_table_group_x_variable() 
-create_xlsx_group_x_variable(analysis_wide_results_table, file_path = "output/results_table_wide.xlsx", overwrite = T)
-
-
-
-### begin new code
 df_main_analysis_table <- presentresults::create_table_variable_x_group(results_table = results_table_labeled, value_columns = "stat")
 
 
@@ -179,6 +156,7 @@ main_data_no_pii <- main_data %>%
 
 deletion <- deletion %>% 
   left_join(raw_data %>%  select(`_uuid`, enumerator_ID), by = join_by("uuid" == "_uuid"))
+
 
 final_output <- list(raw_data = raw_data_no_pii, cleaned_data = main_data_no_pii, survey = kobo_survey, choices = kobo_choice, deletion_log = deletion, cleaning_logs = combined_clogs)
 

@@ -8,8 +8,9 @@ library(ImpactFunctions) ## devtools::install_github("alex-stephenson/ImpactFunc
 
 my_raw_dataset <- ImpactFunctions::get_kobo_data(asset_id = "a78BPkkB3ZDwihdL5uqd5J", un = "abdirahmanaia")
 
-questions <- read_excel("inputs/IRF_ENDLINE_TOOL_FEB2025.xlsx", sheet = "survey")
-choices <- read_excel("inputs/IRF_ENDLINE_TOOL_FEB2025.xlsx", sheet = "choices")
+tool_path <- "inputs/IRF_ENDLINE_TOOL_FEB2025.xlsx"
+questions <- read_excel(tool_path, sheet = "survey")
+choices <- read_excel(tool_path, sheet = "choices")
 
 ###check duration###############################
 # Survey time check function
@@ -18,7 +19,7 @@ maxdur <- 50
 
 kobo_settings_output <- robotoolbox::kobo_settings()
 
-kobo_data_metadata <- get_kobo_metadata(dataset = my_raw_dataset, asset_id = "a78BPkkB3ZDwihdL5uqd5J")
+kobo_data_metadata <- get_kobo_metadata(dataset = my_raw_dataset, un = "abdirahmanaia", asset_id = "a78BPkkB3ZDwihdL5uqd5J")
 
 data_in_processing <- kobo_data_metadata$df_and_duration %>% 
   mutate(district = str_to_lower(district)) %>% 
@@ -35,6 +36,8 @@ data_in_processing <- data_in_processing %>%
     TRUE ~ "Okay"
   ))
 
+#data_in_processing <- data_in_processing %>% 
+#  filter(today == "2025-04-22")
 
 # read in the FO/district mapping
 fo_district_mapping <- read_excel("inputs/SCC_FO_Base_Assignment.xlsx") %>%
@@ -47,7 +50,7 @@ data_in_processing <- data_in_processing %>%
 # checks
 
 ##############logic list, check list to check)
-df_list_logical_checks <- read_excel("C:/Users/alex.stephenson/Downloads/SCC_logical_checks.xlsx")
+df_list_logical_checks <- read_excel("inputs/SCC_logical_checks.xlsx")
 
 # we should exclude all questions from outlier checks that aren't integer response types (integer is the only numerical response type)
 excluded_questions <- questions %>%
