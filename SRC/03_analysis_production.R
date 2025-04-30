@@ -15,11 +15,9 @@ library(readxl)
 date_time_now <- format(Sys.time(), "%a_%b_%d_%Y_%H%M%S")
 
 # load datasets for processing
-file_path <- "output/clean_and_raw.xlsx"
+file_path <- "inputs/clean_and_raw.xlsx"
 main_data <- read_excel(file_path, 'cleaned_data') 
-
-raw_data <- read_excel("inputs/as_raw_data.xlsx") %>% 
-  select(-savings)
+raw_data <- read_excel(file_path, 'raw_data')
 
 ## tool
 kobo_tool_name <- "inputs/IRF_ENDLINE_TOOL_FEB2025.xlsx"
@@ -36,17 +34,23 @@ kobo_choice <- read_excel(kobo_tool_name, sheet = "choices") %>%
 
 ## load in the LOA
 loa <- readxl::read_excel("inputs/scc_endline_loa.xlsx")
-deletion <- read_excel("inputs/as_deletion_log.xlsx")
+
+deletion <- read_excel("inputs/as_deletion_log.xlsx") %>% 
+  left_join(raw_data %>%  select(`_uuid`, enumerator_ID), by = join_by("uuid" == "_uuid")) %>% 
+  mutate(enumerator_ID = substr(enumerator_ID, 1, 5)) %>% 
+  select(-old_value, -new_value, -check_id, -check_binding, -change_type, -new_value, -question) %>% 
+  distinct(uuid, .keep_all = T)
+
+
 combined_clogs <- read_excel("combined clogs/corrected_combined cleaning clogs.xlsx") %>% 
-  filter(! uuid %in% deletion$uuid)
-
-
+  filter(! uuid %in% deletion$uuid) %>% 
+  mutate(enumerator_ID = substr(enumerator_ID, 1, 5)) %>% 
+  select(uuid, question, issue, change_type, old_value, new_value, enumerator_ID) %>% 
+  mutate(enumerator_ID = substr(enumerator_ID, 1, 5))
 
 
 ############################### create HH survey design and analysis #################################################
 
-#main_data_cols <- main_data %>% 
-#  select(any_of(contains(loa_questions)), weights) 
 
 SCC_endline_Survey_Design <- main_data %>% 
   srvyr::as_survey_design(., strata = "district", weights = weights)
@@ -144,7 +148,7 @@ presentresults::create_xlsx_group_x_variable(
 
 ### final clean up of data
 
-cols_to_remove <- c("consent_no", "enumerator_sensitivity", "deviceid", "audit", "enumerator_ID", 
+cols_to_remove <- c("_attachments", "_xform_id_string", "consent_no", "enum_comments", "enumerator_sensitivity", "deviceid", "audit", "enumerator_ID", 
                     "resp_phone", "resp_age", "_submission_time", "_validation_status", 
                     "_notes", "_status", "_submitted_by", "__version__", "_tags", "_index", "audit_URL")
 
@@ -154,10 +158,28 @@ raw_data_no_pii <- raw_data %>%
 main_data_no_pii <- main_data %>% 
   select(-any_of(cols_to_remove))
 
-deletion <- deletion %>% 
-  left_join(raw_data %>%  select(`_uuid`, enumerator_ID), by = join_by("uuid" == "_uuid"))
+variable_tracker <- ImpactFunctions::create_variable_tracker(raw_data = raw_data, clean_data = main_data_no_pii)
+
+readme <- data.frame(
+  Introduction = c(
+    "variable_tracker", 
+    "raw_data", 
+    "cleaned_data", 
+    "survey", "choices", 
+    "deletion_log", "cleaning_log"),
+  `Sheet Descriptions` = c(
+    "A list of all variables removed or added.",
+    "Raw data extract, without PII.", 
+    "Clean data extract, including indicators.", 
+    "Kobo survey.",
+    "Kobo choices.",
+    "All surveys deleted as part of data cleaning.",
+    "All changes made as part of the data cleaning process."
+  )
+)
 
 
-final_output <- list(raw_data = raw_data_no_pii, cleaned_data = main_data_no_pii, survey = kobo_survey, choices = kobo_choice, deletion_log = deletion, cleaning_logs = combined_clogs)
 
-writexl::write_xlsx(final_output, "output/all_data_logbook.xlsx")
+final_output <- list(README = readme, variable_tracker = variable_tracker, raw_data = raw_data_no_pii, cleaned_data = main_data_no_pii, survey = kobo_survey, choices = kobo_choice, deletion_log = deletion, cleaning_logs = combined_clogs)
+
+writexl::write_xlsx(final_output, "output/IRF_Endline_all_data_logbook.xlsx")

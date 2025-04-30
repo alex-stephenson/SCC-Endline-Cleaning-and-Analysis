@@ -10,12 +10,29 @@ library(impactR4PHU)
 questions <- read_excel("inputs/IRF_ENDLINE_TOOL_FEB2025.xlsx", sheet = "survey")
 choices <- read_excel("inputs/IRF_ENDLINE_TOOL_FEB2025.xlsx", sheet = "choices")
 
-raw_data <- read_excel("inputs/as_raw_data.xlsx") %>% 
-  select(-savings)
+raw_data <- ImpactFunctions::get_kobo_data("aJ8Dxysm2GG3EgJDwc88Ap", un = "abdirahmanaia")
+
 deletion <- read_excel("inputs/as_deletion_log.xlsx")
-combined_clogs <- read_excel("combined clogs/corrected_combined cleaning clogs.xlsx") %>% 
-  filter(! uuid %in% deletion$uuid)
-#clean_load <- read_excel("output/final_output/final_output_for IRF_ENDLINE ANALYSIS.xlsx", sheet = "cleaned_data")
+
+dir_path <- "combined clogs"
+all_files <- list.files(
+  path = dir_path,
+  recursive = TRUE,
+  full.names = TRUE
+)
+
+# Function to read and convert all columns to character
+read_and_clean <- function(file, sheet) {
+  read_excel(file, sheet = sheet) %>%
+    mutate(across(everything(), as.character)) %>% 
+    mutate(file_path = file)
+}
+
+# Read and combine all files into a single dataframe
+combined_clogs <- map_dfr(all_files, sheet = 'cleaning_log', read_and_clean) %>% 
+  filter(! uuid %in% deletion$uuid) %>% 
+  filter(change_type != "remove_survey") %>% 
+  distinct(uuid, question, old_value, new_value, .keep_all = T)
 
 ## clog review complete
 clog_review <- cleaningtools::review_cleaning_log(
@@ -41,8 +58,6 @@ my_clean_data <- create_clean_data(raw_dataset = raw_data,
 my_clean_data_deleted <- my_clean_data %>% 
   filter(! `_uuid` %in% deletion$uuid)
 
-
-
 first_review <- review_cleaning(
   raw_dataset = raw_data,
   raw_dataset_uuid_column = "_uuid",
@@ -61,40 +76,13 @@ first_review <- review_cleaning(
   check_for_deletion_log = T
 )
 
-
-## validate these issues
-first_review %>%
-  filter(comment == "Changes were not applied") %>% 
-  mutate(cl.new_value = round(as.numeric(cl.new_value)),
-         df.new_value = round(as.numeric(df.new_value))) %>% 
-  filter(cl.new_value != df.new_value)
-
-## validate these issues
-first_review %>%
- # filter(comment == "Entry missing in cleaning log") %>% 
-  mutate(df.new_value = round(as.numeric(df.new_value)),
-         df.old_value = round(as.numeric(df.old_value))) %>% 
-  filter(df.new_value != df.new_value)
-
-first_review %>%
-  filter(comment != "Entry missing in cleaning log") %>% 
-  mutate(df.new_value = round(as.numeric(df.new_value)),
-         df.old_value = round(as.numeric(df.old_value))) %>% 
-  filter(df.new_value != df.new_value)
+check <- first_review %>%
+  dplyr::mutate(dplyr::across(c(df.new_value, cl.new_value, df.old_value, cl.old_value), as.numeric)) %>%
+  dplyr::mutate(dplyr::across(c(df.new_value, cl.new_value, df.old_value, cl.old_value), round)) %>%
+  filter(df.new_value != cl.new_value | df.old_value != cl.old_value) 
 
 
-first_review %>%
-  filter(comment != "No action with different value in new value column.") %>% 
-  mutate(df.new_value = round(as.numeric(df.new_value)),
-         df.old_value = round(as.numeric(df.old_value))) %>% 
-  filter(df.new_value != df.new_value)
 
-first_review %>%
-  filter(comment == "No action with different value in new value column.") %>% 
-  filter(df.change_type == "no_action") %>% 
-  mutate(cl.new_value = round(as.numeric(cl.new_value)),
-         cl.old_value = round(as.numeric(cl.old_value))) %>% 
-  filter(cl.old_value != cl.new_value) 
 
 #Adding the composite indicators
 
@@ -102,7 +90,6 @@ first_review %>%
 
 MEB_df <- read_excel("inputs/MEB_Values.xlsx") %>% 
   select(region, MEB, SMEB)
-
 
 my_data_with_indicators <- my_clean_data_deleted %>%
   add_fcs(
@@ -248,8 +235,6 @@ cleaned_data <- cleaned_data %>%
          current_status_numeric = as.numeric(Current_Status))
      
 
-#### check this with Liston
-  
 # Economic Vulnerability (ECMEN)
 cleaned_data <- cleaned_data %>% 
   mutate(ECMEN = case_when(
@@ -330,13 +315,6 @@ cleaned_data_weighted <- cleaned_data %>%
               population_column = "population")
 
 
-
 # writing the raw and cleaned data
 data<-list(questions =questions,choices=choices,raw_data=raw_data,cleaned_data=cleaned_data_weighted)
-writexl::write_xlsx(data,paste("output/clean_and_raw.xlsx"))
-
-
-
-test_output <- kobo_data_metadata <- get_kobo_metadata(dataset = my_raw_dataset, asset_id = "a78BPkkB3ZDwihdL5uqd5J", un = "abdirahmanaia")
-
-
+writexl::write_xlsx(data,paste("inputs/clean_and_raw_check.xlsx"))
